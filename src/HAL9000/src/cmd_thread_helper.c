@@ -16,7 +16,7 @@
 #include "ex_timer.h"
 #include "vmm.h"
 #include "pit.h"
-
+//#include "thread.c"
 
 #pragma warning(push)
 
@@ -126,7 +126,11 @@ void
     )
 {
     STATUS status;
-
+    /*PTHREAD pThread = GetCurrentThread();  print children
+    while (pThread->Children.Flink) {
+        PTHREAD child = CONTAINING_RECORD(pThread->ChildrenHead, THREAD, pThread->Children);
+        LOG("Child 0x%x\n", child->Id)
+    }*/
     ASSERT(NumberOfParameters == 0);
 
     LOG("%7s", "TID|");
@@ -142,6 +146,14 @@ void
     status = ThreadExecuteForEachThreadEntry(_CmdThreadPrint, NULL );
     ASSERT( SUCCEEDED(status));
 }
+
+/*void
+(__cdecl CmdPrintThreadInfo)()
+{
+    LOG("%d", GetNrOfThreads());
+    LOG("%d", GetNrOfReadyThreads());
+    LOG("%d", GetNrOfBlockedThreads());
+}*/
 
 void
 (__cdecl CmdYield)(

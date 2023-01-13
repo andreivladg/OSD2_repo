@@ -39,6 +39,7 @@ typedef struct _THREAD
 
     TID                     Id;
     char*                   Name;
+    QWORD                   TimesYielded;
 
     // Currently the thread priority is not used for anything
     THREAD_PRIORITY         Priority;
@@ -62,6 +63,11 @@ typedef struct _THREAD
 
     // List of the threads in the same process
     LIST_ENTRY              ProcessList;
+
+    LIST_ENTRY              ChildrenHead;
+    LOCK                    ChildrenLock;
+    LIST_ENTRY              Children;
+    struct _THREAD          *Parent;
 
     // Incremented on each clock tick for the running thread
     QWORD                   TickCountCompleted;

@@ -27,6 +27,14 @@ typedef enum _SYSCALL_ID
     SyscallIdFileClose,
     SyscallIdFileRead,
     SyscallIdFileWrite,
+    //review problem
+    SyscallIdMemset,
+    SyscallIdDisableSyscalls,
+    SyscallIdSetGlobalVariable,
+    SyscallIdGetGlobalVariable,
+    SyscallIdMutexInit,
+    SyscallIdMutexAquire,
+    SyscallIdMutexRelease,
 
     SyscallIdReserved = SyscallIdFileWrite + 1
 } SYSCALL_ID;

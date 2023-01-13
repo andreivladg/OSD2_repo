@@ -511,7 +511,8 @@ _ProcessInit(
         // with the system management in case something goes wrong (PID + full process
         // list management)
         pProcess->Id = _ProcessSystemRetrieveNextPid();
-
+        (&pProcess->ChildrenHead);
+        InsertHeadList(&pProcess->ChildrenHead, &pProcess->Children);
         MutexAcquire(&m_processData.ProcessListLock);
         InsertTailList(&m_processData.ProcessList, &pProcess->NextProcess);
         MutexRelease(&m_processData.ProcessListLock);

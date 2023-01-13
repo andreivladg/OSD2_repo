@@ -10,7 +10,7 @@
 #include "gdtmu.h"
 #include "pe_exports.h"
 
-#define TID_INCREMENT               4
+#define TID_INCREMENT               -1
 
 #define THREAD_TIME_SLICE           1
 
@@ -36,6 +36,10 @@ typedef struct _THREAD_SYSTEM_DATA
 
     _Guarded_by_(ReadyThreadsLock)
     LIST_ENTRY          ReadyThreadsList;
+
+    QWORD               NrOfThreads;
+    QWORD               NrOfReadyThreads;
+    QWORD               NrOfBlockedThreads;
 } THREAD_SYSTEM_DATA, *PTHREAD_SYSTEM_DATA;
 
 static THREAD_SYSTEM_DATA m_threadSystemData;
@@ -47,7 +51,7 @@ _ThreadSystemGetNextTid(
     void
     )
 {
-    static volatile TID __currentTid = 0;
+    static volatile TID __currentTid = MAX_QWORD;
 
     return _InterlockedExchangeAdd64(&__currentTid, TID_INCREMENT);
 }
@@ -145,6 +149,9 @@ ThreadSystemPreinit(
 
     InitializeListHead(&m_threadSystemData.ReadyThreadsList);
     LockInit(&m_threadSystemData.ReadyThreadsLock);
+    m_threadSystemData.NrOfThreads = 0;
+    m_threadSystemData.NrOfBlockedThreads = 0;
+    m_threadSystemData.NrOfReadyThreads = 0;
 }
 
 STATUS
@@ -294,6 +301,7 @@ ThreadCreateEx(
     PVOID pStartFunction;
     QWORD firstArg;
     QWORD secondArg;
+    PTHREAD parentThread = GetCurrentThread();
 
     if (NULL == Name)
     {
@@ -326,6 +334,11 @@ ThreadCreateEx(
     ASSERT(NULL != pCpu);
 
     status = _ThreadInit(Name, Priority, &pThread, TRUE);
+    m_threadSystemData.NrOfThreads++;
+    pThread->Parent = parentThread;
+    InsertHeadList(&parentThread->ChildrenHead, &pThread->Children);
+    LOG("Thread [tid = 0x%X] is being created", pThread->Id);
+
     if (!SUCCEEDED(status))
     {
         LOG_FUNC_ERROR("_ThreadInit", status);
@@ -479,12 +492,15 @@ ThreadYield(
     if (pThread != pCpu->ThreadData.IdleThread)
     {
         InsertTailList(&m_threadSystemData.ReadyThreadsList, &pThread->ReadyList);
+        m_threadSystemData.NrOfReadyThreads++;
     }
     if (!bForcedYield)
     {
         pThread->TickCountEarly++;
     }
+    pThread->TimesYielded++;
     pThread->State = ThreadStateReady;
+
     _ThreadSchedule();
     ASSERT( !LockIsOwner(&m_threadSystemData.ReadyThreadsLock));
     LOG_TRACE_THREAD("Returned from _ThreadSchedule\n");
@@ -513,6 +529,7 @@ ThreadBlock(
 
     pCurrentThread->TickCountEarly++;
     pCurrentThread->State = ThreadStateBlocked;
+    m_threadSystemData.NrOfBlockedThreads++;
     LockAcquire(&m_threadSystemData.ReadyThreadsLock, &oldState);
     _ThreadSchedule();
     ASSERT( !LockIsOwner(&m_threadSystemData.ReadyThreadsLock));
@@ -537,6 +554,7 @@ ThreadUnblock(
     Thread->State = ThreadStateReady;
     LockRelease(&m_threadSystemData.ReadyThreadsLock, dummyState );
     LockRelease(&Thread->BlockLock, oldState);
+    m_threadSystemData.NrOfBlockedThreads--;
 }
 
 void
@@ -619,7 +637,9 @@ ThreadTerminate(
     ASSERT( NULL != Thread );
 
     // it's not a problem if the thread already finished
+    LOG("Thread [tid = 0x%X] yielded %u times", &Thread->TimesYielded);
     _InterlockedOr(&Thread->Flags, THREAD_FLAG_FORCE_TERMINATE_PENDING );
+    m_threadSystemData.NrOfThreads--;
 }
 
 const
@@ -778,6 +798,7 @@ _ThreadInit(
             pThread->Stack = pStack;
             pThread->InitialStackBase = pStack;
             pThread->StackSize = STACK_DEFAULT_SIZE;
+            InitializeListHead(&pThread->ChildrenHead);
         }
 
         pThread->Name = ExAllocatePoolWithTag(PoolAllocateZeroMemory, sizeof(char)*(nameLen + 1), HEAP_THREAD_TAG, 0);
@@ -793,6 +814,7 @@ _ThreadInit(
         pThread->Id = _ThreadSystemGetNextTid();
         pThread->State = ThreadStateBlocked;
         pThread->Priority = Priority;
+        pThread->TimesYielded = 0;
 
         LockInit(&pThread->BlockLock);
 
@@ -950,7 +972,7 @@ _ThreadSetupMainThreadUserStack(
     ASSERT(ResultingStack != NULL);
     ASSERT(Process != NULL);
 
-    *ResultingStack = InitialStack;
+    *ResultingStack = (PVOID)PtrDiff(InitialStack, SHADOW_STACK_SIZE + sizeof(PVOID));
 
     return STATUS_SUCCESS;
 }
@@ -1113,10 +1135,11 @@ _ThreadGetReadyThread(
 
     ASSERT( INTR_OFF == CpuIntrGetState());
     ASSERT( LockIsOwner(&m_threadSystemData.ReadyThreadsLock));
-
+    
     pNextThread = NULL;
 
     pEntry = RemoveHeadList(&m_threadSystemData.ReadyThreadsList);
+    m_threadSystemData.NrOfReadyThreads--;
     if (pEntry == &m_threadSystemData.ReadyThreadsList)
     {
         pNextThread = GetCurrentPcpu()->ThreadData.IdleThread;
@@ -1238,4 +1261,16 @@ _ThreadKernelFunction(
 
     ThreadExit(exitStatus);
     NOT_REACHED;
+}
+
+QWORD GetNrOfThreads() {
+    return m_threadSystemData.NrOfThreads;
+}
+
+QWORD GetNrOfReadyThreads() {
+    return m_threadSystemData.NrOfReadyThreads;
+}
+
+QWORD GetNrOfBlockedThreads() {
+    return m_threadSystemData.NrOfBlockedThreads;
 }
