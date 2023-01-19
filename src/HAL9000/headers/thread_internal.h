@@ -38,6 +38,10 @@ typedef struct _THREAD
     struct _THREAD          *Self;
 
     TID                     Id;
+    //parent thread id
+    TID                     ParentId;
+    //cpu id
+    APIC_ID                 CPUId;
     char*                   Name;
 
     // Currently the thread priority is not used for anything

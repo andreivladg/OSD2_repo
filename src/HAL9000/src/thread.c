@@ -10,7 +10,8 @@
 #include "gdtmu.h"
 #include "pe_exports.h"
 
-#define TID_INCREMENT               4
+//increment by month of bday
+#define TID_INCREMENT               11
 
 #define THREAD_TIME_SLICE           1
 
@@ -47,7 +48,8 @@ _ThreadSystemGetNextTid(
 	void
 )
 {
-	static volatile TID __currentTid = 0;
+	//current tid = day of bday
+	static volatile TID __currentTid = 19;
 
 	return _InterlockedExchangeAdd64(&__currentTid, TID_INCREMENT);
 }
@@ -331,7 +333,7 @@ ThreadCreateEx(
 		LOG_FUNC_ERROR("_ThreadInit", status);
 		return status;
 	}
-
+	LOG("Thread  [tid = 0x%X]", pThread->Id);
 	ProcessInsertThreadInList(Process, pThread);
 
 	// the reference must be done outside _ThreadInit
@@ -725,7 +727,6 @@ _ThreadInit(
 	DWORD nameLen;
 	PVOID pStack;
 	INTR_STATE oldIntrState;
-
 	LOG_FUNC_START;
 
 	ASSERT(NULL != Name);
@@ -791,6 +792,12 @@ _ThreadInit(
 		strcpy(pThread->Name, Name);
 
 		pThread->Id = _ThreadSystemGetNextTid();
+		//get parrent thread Id
+		if (GetCurrentThread() != NULL) {
+			pThread->ParentId = GetCurrentThread()->Id;
+		}
+		//get current CPU id
+		pThread->CPUId = GetCurrentPcpu()->ApicId;
 		pThread->State = ThreadStateBlocked;
 		pThread->Priority = Priority;
 

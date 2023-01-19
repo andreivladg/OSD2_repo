@@ -16,6 +16,7 @@
 #include "ex_timer.h"
 #include "vmm.h"
 #include "pit.h"
+#include "thread.h"
 
 
 #pragma warning(push)
@@ -43,6 +44,8 @@ typedef struct _BOUND_THREAD_CTX
 
 static FUNC_ThreadStart     _ThreadCpuBound;
 static FUNC_ThreadStart     _ThreadIoBound;
+static FUNC_ThreadStart     DoNothing;
+static FUNC_ThreadStart     CmdThreadInfo;
 
 static
 void
@@ -120,8 +123,61 @@ void
     }
 }
 
+static
+STATUS
+_CmdThreadPrintInfo (
+    IN      PLIST_ENTRY     ListEntry,
+    IN_OPT  PVOID           FunctionContext
+    )
+{
+    PTHREAD pThread;
+
+    ASSERT(NULL != ListEntry);
+    ASSERT(NULL == FunctionContext);
+
+    pThread = CONTAINING_RECORD(ListEntry, THREAD, AllList);
+
+    LOG("%6x%c", pThread->Id, '|');
+    //print parent Tid
+    LOG("%6x%c", pThread->ParentId, '|');
+    LOG("%19s%c", pThread->Name, '|');
+    //print cpu
+    LOG("%9x%c", pThread->CPUId, '|');
+    LOG("\n");
+
+    return STATUS_SUCCESS;
+}
+
+
+static STATUS
+CmdThreadInfo(
+    IN_OPT      PVOID       Context
+    )
+{
+    STATUS status;
+
+    ASSERT(Context == NULL);
+
+    LOG("%7s", "TID|");
+    LOG("%7s", "Parent TID|");
+    LOG("%20s", "Name|");
+    LOG("%10s", "CPU|");
+    LOG("\n");
+
+    status = ThreadExecuteForEachThreadEntry(_CmdThreadPrintInfo, NULL);
+    ASSERT(SUCCEEDED(status));
+    return STATUS_SUCCESS;
+}
+
+static
+STATUS
+DoNothing(IN_OPT      PVOID       Context) {
+    ASSERT(Context == NULL);
+    return STATUS_SUCCESS;
+}
+
 void
-(__cdecl CmdListThreads)(
+(__cdecl CmdThreadsFun)(
     IN          QWORD       NumberOfParameters
     )
 {
@@ -129,18 +185,17 @@ void
 
     ASSERT(NumberOfParameters == 0);
 
-    LOG("%7s", "TID|");
-    LOG("%20s", "Name|");
-    LOG("%5s", "Prio|");
-    LOG("%8s", "State|");
-    LOG("%10s", "Cmp ticks|");
-    LOG("%10s", "Prt ticks|");
-    LOG("%10s", "Ttl ticks|");
-    LOG("%10s", "Process|");
-    LOG("\n");
-
-    status = ThreadExecuteForEachThreadEntry(_CmdThreadPrint, NULL );
-    ASSERT( SUCCEEDED(status));
+    PTHREAD thread1;
+    PTHREAD thread2;
+    status = ThreadCreate("SpawnThreads", ThreadPriorityDefault,DoNothing,NULL, &thread1);
+    status = ThreadCreate("InfoThread", ThreadPriorityDefault, CmdThreadInfo, NULL, &thread2);
+    SetCurrentThread(thread1);
+    if (SUCCEEDED(status)) {
+        PTHREAD thread1Chidl1;
+        PTHREAD thread1Child2;
+        ThreadCreate("thread1 child1", ThreadPriorityDefault,DoNothing, NULL, &thread1Chidl1);
+        ThreadCreate("thread1 child2", ThreadPriorityDefault, DoNothing, NULL, &thread1Child2);
+    }   
 }
 
 void
@@ -686,6 +741,8 @@ STATUS
     pThread = CONTAINING_RECORD(ListEntry, THREAD, AllList );
 
     LOG("%6x%c", pThread->Id, '|');
+    //print parent Tid
+    LOG("%6x%c", pThread->ParentId, '|');
     LOG("%19s%c", pThread->Name, '|');
     LOG("%4U%c", pThread->Priority, '|');
     LOG("%7s%c", _CmdThreadStateToName(pThread->State), '|');
